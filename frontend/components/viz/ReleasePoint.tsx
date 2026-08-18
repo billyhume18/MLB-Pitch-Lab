@@ -3,9 +3,33 @@ import { useMemo, useState } from 'react'
 import {
   ResponsiveContainer, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, Customized,
+  LineChart, Line,
 } from 'recharts'
 import { pitchColor } from '@/lib/colors'
+import { stdDev } from '@/lib/metrics'
 import type { StatcastPitch } from '@/lib/types'
+
+// Release-point standard deviation per outing, across all pitch types
+// combined — a sudden jump can precede injury or flag a mechanical change.
+function useConsistencyTrend(pitches: StatcastPitch[]) {
+  return useMemo(() => {
+    const byGame = new Map<number, StatcastPitch[]>()
+    for (const p of pitches) {
+      if (p.release_pos_x === null || p.release_pos_z === null) continue
+      if (!byGame.has(p.game_pk)) byGame.set(p.game_pk, [])
+      byGame.get(p.game_pk)!.push(p)
+    }
+    return [...byGame.entries()]
+      .map(([game_pk, rows]) => ({
+        game_pk,
+        game_date: rows[0].game_date,
+        relXSd: stdDev(rows.map(r => r.release_pos_x)),
+        relZSd: stdDev(rows.map(r => r.release_pos_z)),
+      }))
+      .filter(r => r.relXSd !== null && r.relZSd !== null)
+      .sort((a, b) => a.game_date.localeCompare(b.game_date))
+  }, [pitches])
+}
 
 type Mode = 'type' | 'inning'
 
@@ -59,6 +83,7 @@ const EllipseOverlay = ({ xAxisMap, yAxisMap, ellipses }: {
 export default function ReleasePoint({ pitches }: Props) {
   const [mode, setMode] = useState<Mode>('type')
   const [showEllipses, setShowEllipses] = useState(true)
+  const trend = useConsistencyTrend(pitches)
 
   const maxInning = useMemo(() => Math.max(...pitches.map(p => p.inning), 1), [pitches])
 
@@ -165,6 +190,30 @@ export default function ReleasePoint({ pitches }: Props) {
           <span>Early innings</span>
           <div className="flex-1 h-2 rounded" style={{ background: 'linear-gradient(to right, #3b82f6, #ef4444)' }} />
           <span>Late innings</span>
+        </div>
+      )}
+
+      {trend.length >= 2 && (
+        <div className="mt-3 h-32 shrink-0">
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">
+            Release-Point Std Dev by Outing (mechanical consistency over time)
+          </div>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trend} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+              <CartesianGrid strokeDasharray="2 4" stroke="#1e3a5f" />
+              <XAxis dataKey="game_date" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }}
+                label={{ value: 'Std dev (ft)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 11 }} />
+              <Tooltip
+                contentStyle={{ background: '#0a1929', border: '1px solid #1e3a5f', borderRadius: 4, fontSize: 12 }}
+                itemStyle={{ color: '#cbd5e1' }}
+                formatter={(v: number) => [v.toFixed(3) + ' ft', '']}
+              />
+              <Legend formatter={v => <span style={{ color: '#cbd5e1', fontSize: 12 }}>{v}</span>} />
+              <Line type="monotone" dataKey="relXSd" name="Release X SD" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} />
+              <Line type="monotone" dataKey="relZSd" name="Release Z SD" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>

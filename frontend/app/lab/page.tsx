@@ -1,43 +1,59 @@
 'use client'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Sidebar from '@/components/layout/Sidebar'
 import PlayerHeader from '@/components/stats/PlayerHeader'
 import TraditionalStats from '@/components/stats/TraditionalStats'
 import PitchMixSummary from '@/components/stats/PitchMixSummary'
 import SequencingMatrix from '@/components/viz/SequencingMatrix'
 import SituationSplits from '@/components/viz/SituationSplits'
+import MovementPlot from '@/components/viz/MovementPlot'
+import ReleasePoint from '@/components/viz/ReleasePoint'
+import VeloTrend from '@/components/viz/VeloTrend'
+import TunnelingPlot from '@/components/viz/TunnelingPlot'
+import StrikeZone from '@/components/viz/StrikeZone'
+import WorkloadChart from '@/components/viz/WorkloadChart'
+import BaselineCompare from '@/components/viz/BaselineCompare'
 import PitchTable from '@/components/table/PitchTable'
+import ExportMenu from '@/components/table/ExportMenu'
 import Spinner from '@/components/ui/Spinner'
-import { fetchPitches, getPlayerInfo, getSeasonStats, getCareerStats, getGameLog } from '@/lib/api'
+import { fetchPitches, getPlayerInfo, getSeasonStats, getCareerStats, getGameLog, getSaberStats } from '@/lib/api'
 import { applyFilters, describeFilters, calcWhiffPct, avg } from '@/lib/filters'
+import { calcWithinOutingFatigue } from '@/lib/workload'
 import { DEFAULT_FILTERS } from '@/lib/types'
 import { pitchColor } from '@/lib/colors'
+import { useTimeFrame } from '@/lib/timeframe'
 import type { StatcastPitch, PitchFilters, PlayerSearchResult } from '@/lib/types'
 
 const TABS = [
   { id: 'arsenal',    label: 'Arsenal' },
   { id: 'sequencing', label: 'Sequencing' },
   { id: 'splits',     label: 'Situation Splits' },
+  { id: 'movement',   label: 'Movement' },
+  { id: 'release',    label: 'Release Point' },
+  { id: 'velo',       label: 'Velo / Fatigue' },
+  { id: 'tunnel',     label: 'Tunneling' },
+  { id: 'heatmap',    label: 'Command' },
+  { id: 'workload',   label: 'Workload' },
+  { id: 'baseline',   label: 'Baseline' },
   { id: 'log',        label: 'Pitch Log' },
 ]
 
-const today         = new Date().toISOString().slice(0, 10)
-const defaultStart  = `${new Date().getFullYear()}-03-01`
-
 export default function LabPage() {
+  const { startDate, endDate } = useTimeFrame()
   const [selected,    setSelected]    = useState<PlayerSearchResult | null>(null)
-  const [startDate,   setStartDate]   = useState(defaultStart)
-  const [endDate,     setEndDate]     = useState(today)
   const [pitches,     setPitches]     = useState<StatcastPitch[]>([])
   const [playerInfo,  setPlayerInfo]  = useState<Record<string, unknown> | null>(null)
   const [seasonStats, setSeasonStats] = useState<Record<string, unknown> | null>(null)
   const [careerStats, setCareerStats] = useState<Record<string, unknown> | null>(null)
+  const [seasonSaber, setSeasonSaber] = useState<Record<string, unknown> | null>(null)
+  const [priorSeasonStats, setPriorSeasonStats] = useState<Record<string, unknown> | null>(null)
   const [gameLog,     setGameLog]     = useState<Record<string, unknown>[]>([])
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [activeTab,   setActiveTab]   = useState('arsenal')
   const [filters,     setFilters]     = useState<PitchFilters>({ ...DEFAULT_FILTERS })
   const [gameLogOpen, setGameLogOpen] = useState(false)
+  const tabContentRef = useRef<HTMLDivElement>(null)
 
   // Determine pitcher's team abbreviation from Statcast data (used for Home/Away filter)
   const pitcherTeam = useMemo(() => {
@@ -61,23 +77,29 @@ export default function LabPage() {
     setPlayerInfo(null)
     setSeasonStats(null)
     setCareerStats(null)
+    setSeasonSaber(null)
+    setPriorSeasonStats(null)
     setGameLog([])
     setFilters({ ...DEFAULT_FILTERS })
 
     const yr = Number(startDate.slice(0, 4))
 
     try {
-      const [pitchData, info, stats, career, log] = await Promise.all([
+      const [pitchData, info, stats, career, log, saber, prior] = await Promise.all([
         fetchPitches(selected.key_mlbam, startDate, endDate),
         getPlayerInfo(selected.key_mlbam),
         getSeasonStats(selected.key_mlbam, yr),
         getCareerStats(selected.key_mlbam),
         getGameLog(selected.key_mlbam, yr),
+        getSaberStats(selected.key_mlbam, yr),
+        getSeasonStats(selected.key_mlbam, yr - 1).catch(() => null),
       ])
       setPitches(pitchData.pitches ?? [])
       setPlayerInfo(info)
       setSeasonStats(stats)
       setCareerStats(career)
+      setSeasonSaber(saber)
+      setPriorSeasonStats(prior)
       setGameLog(Array.isArray(log) ? log : [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load data. Is the R backend running on port 8000?')
@@ -100,10 +122,8 @@ export default function LabPage() {
       <Sidebar
         selected={selected}
         onPlayerSelect={p => { setSelected(p); setFilters({ ...DEFAULT_FILTERS }) }}
-        startDate={startDate} endDate={endDate}
-        onStartDateChange={setStartDate} onEndDateChange={setEndDate}
         onLoad={handleLoad} loading={loading}
-        pitches={pitches} filteredPitches={filteredPitches}
+        pitches={pitches} filteredPitches={filteredPitches} pitcherTeam={pitcherTeam}
         filters={filters} onFiltersChange={setFilters}
         gameLog={gameLog}
       />
@@ -157,14 +177,23 @@ export default function LabPage() {
                   {filterDesc}
                 </div>
               )}
+              <div className="pl-3 pb-2">
+                <ExportMenu
+                  rows={filteredPitches}
+                  filenameBase={`statcast_${selected?.name_last ?? 'pitcher'}_${startDate}_${endDate}`}
+                  pdfTitle={`${selected ? `${selected.name_first} ${selected.name_last}` : 'Pitcher'} — ${TABS.find(t => t.id === activeTab)?.label ?? ''}`}
+                  pdfSubtitle={`${startDate} to ${endDate}`}
+                  chartContainerRef={tabContentRef}
+                />
+              </div>
             </div>
 
             {/* Tab content */}
-            <div className="flex-1 min-h-0 overflow-hidden p-4">
+            <div ref={tabContentRef} className="flex-1 min-h-0 overflow-hidden p-4">
               {activeTab === 'arsenal' && (
                 <div className="h-full overflow-auto">
                   <PlayerHeader info={playerInfo} />
-                  <TraditionalStats season={seasonStats} career={careerStats} />
+                  <TraditionalStats season={seasonStats} career={careerStats} seasonSaber={seasonSaber} />
                   <PitchMixSummary pitches={filteredPitches} />
                   <HandednessSplits pitches={filteredPitches} />
                   {gameLog.length > 0 && (
@@ -190,6 +219,28 @@ export default function LabPage() {
 
               {activeTab === 'sequencing' && <SequencingMatrix pitches={filteredPitches} />}
               {activeTab === 'splits'     && <SituationSplits  pitches={filteredPitches} />}
+              {activeTab === 'movement'   && <MovementPlot pitches={filteredPitches} filters={filters} />}
+              {activeTab === 'release'    && <ReleasePoint pitches={filteredPitches} />}
+              {activeTab === 'velo'       && (
+                <div className="h-full flex flex-col gap-3">
+                  <FatigueSummary pitches={filteredPitches} />
+                  <div className="flex-1 min-h-0">
+                    <VeloTrend pitches={filteredPitches} gamePk={filters.gamePk} />
+                  </div>
+                </div>
+              )}
+              {activeTab === 'tunnel'     && <TunnelingPlot pitches={filteredPitches} />}
+              {activeTab === 'heatmap'    && <StrikeZone pitches={filteredPitches} />}
+              {activeTab === 'workload'   && <WorkloadChart pitches={pitches} />}
+              {activeTab === 'baseline'   && (
+                <BaselineCompare
+                  current={seasonStats}
+                  currentLabel={`${Number(startDate.slice(0, 4))} Season`}
+                  career={careerStats}
+                  priorSeason={priorSeasonStats}
+                  priorSeasonLabel={`${Number(startDate.slice(0, 4)) - 1} Season`}
+                />
+              )}
               {activeTab === 'log'        && (
                 <PitchTable
                   pitches={filteredPitches}
@@ -202,6 +253,28 @@ export default function LabPage() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function FatigueSummary({ pitches }: { pitches: StatcastPitch[] }) {
+  const f = useMemo(() => calcWithinOutingFatigue(pitches), [pitches])
+  if (f.outingsAnalyzed === 0) return null
+  return (
+    <div className="shrink-0 bg-navy-800 rounded-lg p-3 border border-navy-700 flex gap-6 text-xs">
+      <div className="text-slate-500">
+        Within-outing fatigue (first 15 vs. last 15 pitches, {f.outingsAnalyzed} qualifying outing{f.outingsAnalyzed === 1 ? '' : 's'})
+      </div>
+      <span className="text-slate-400">
+        Velo Δ <span className={`font-mono ${f.veloDeltaAvg !== null && f.veloDeltaAvg < 0 ? 'text-red-400' : 'text-white'}`}>
+          {f.veloDeltaAvg !== null ? (f.veloDeltaAvg > 0 ? '+' : '') + f.veloDeltaAvg.toFixed(2) + ' mph' : '—'}
+        </span>
+      </span>
+      <span className="text-slate-400">
+        Spin Δ <span className={`font-mono ${f.spinDeltaAvg !== null && f.spinDeltaAvg < 0 ? 'text-red-400' : 'text-white'}`}>
+          {f.spinDeltaAvg !== null ? (f.spinDeltaAvg > 0 ? '+' : '') + f.spinDeltaAvg.toFixed(0) + ' rpm' : '—'}
+        </span>
+      </span>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState, useCallback } from 'react'
 import { pitchColor } from '@/lib/colors'
+import ExportMenu from '@/components/table/ExportMenu'
 import type { StatcastPitch } from '@/lib/types'
 
 const PAGE_SIZE = 100
@@ -38,29 +39,6 @@ function fmt(v: unknown): string {
   if (v === null || v === undefined) return ''
   if (typeof v === 'number') return isNaN(v) ? '' : Number.isInteger(v) ? String(v) : v.toFixed(3)
   return String(v)
-}
-
-function exportCSV(pitches: StatcastPitch[], allCols: string[], lastName: string, start: string, end: string) {
-  if (!pitches.length) return
-  const header = allCols.join(',')
-  const rows = pitches.map(p => {
-    const raw = p as Record<string, unknown>
-    return allCols.map(k => {
-      const v = raw[k]
-      if (v == null) return ''
-      const s = String(v)
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? `"${s.replace(/"/g, '""')}"` : s
-    }).join(',')
-  })
-  const csv = [header, ...rows].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `statcast_${lastName || 'pitcher'}_${start}_${end}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 export default function PitchTable({ pitches, lastName, startDate, endDate }: Props) {
@@ -161,12 +139,13 @@ export default function PitchTable({ pitches, lastName, startDate, endDate }: Pr
             </div>
           )}
         </div>
-        <button
-          onClick={() => exportCSV(pitches, allColumns, lastName, startDate, endDate)}
-          className="px-3 py-1.5 rounded border border-navy-600 text-xs text-slate-300 hover:bg-navy-800 hover:text-white transition-colors whitespace-nowrap"
-        >
-          Export CSV
-        </button>
+        <ExportMenu
+          rows={sorted}
+          filenameBase={`statcast_${lastName || 'pitcher'}_${startDate}_${endDate}`}
+          pdfTitle={`${lastName || 'Pitcher'} — Pitch Log`}
+          pdfSubtitle={`${startDate} to ${endDate}`}
+          pdfColumns={visibleColumns.map(c => ({ key: c, label: c }))}
+        />
         <span className="text-xs text-slate-400 whitespace-nowrap">
           {sorted.length.toLocaleString()} rows · {visibleColumns.length} cols
         </span>

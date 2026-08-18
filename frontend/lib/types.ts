@@ -77,8 +77,19 @@ export interface StatcastPitch {
   delta_home_win_exp: number | null
   if_fielding_alignment: string | null
   of_fielding_alignment: string | null
+  arm_angle: number | null
+  n_thruorder_pitcher: number | null
+  pitcher_days_since_prev_game: number | null
+  pitcher_days_until_next_game: number | null
   [key: string]: unknown
 }
+
+export interface NumRange {
+  min: number | null
+  max: number | null
+}
+
+export const EMPTY_RANGE: NumRange = { min: null, max: null }
 
 export interface PitchFilters {
   pitchTypes: Set<string>
@@ -99,6 +110,30 @@ export interface PitchFilters {
   ifAlignment: string
   ofAlignment: string
   gamePk: number | null
+
+  // Extended Statcast Search-style filters
+  veloRange: NumRange
+  spinRange: NumRange
+  ihbRange: NumRange
+  ivbRange: NumRange
+  releasePosXRange: NumRange
+  releasePosZRange: NumRange
+  releaseExtensionRange: NumRange
+  armAngleRange: NumRange
+  plateXRange: NumRange
+  plateZRange: NumRange
+  launchSpeedRange: NumRange
+  launchAngleRange: NumRange
+  daysRestRange: NumRange
+  inningHalf: 'top' | 'bottom' | ''
+  handednessMatchup: 'same' | 'opposite' | ''
+  opponentTeam: string
+  timesThroughOrder: number | null
+  barrelsOnly: boolean
+
+  // Roster/mechanics-level filters (not per-row predicates; applied as a
+  // pre-pass that groups by game_pk before the row-level checks above)
+  minPitchesGame: number | null
 }
 
 export const DEFAULT_FILTERS: PitchFilters = {
@@ -120,4 +155,25 @@ export const DEFAULT_FILTERS: PitchFilters = {
   ifAlignment: '',
   ofAlignment: '',
   gamePk: null,
+
+  veloRange: { ...EMPTY_RANGE },
+  spinRange: { ...EMPTY_RANGE },
+  ihbRange: { ...EMPTY_RANGE },
+  ivbRange: { ...EMPTY_RANGE },
+  releasePosXRange: { ...EMPTY_RANGE },
+  releasePosZRange: { ...EMPTY_RANGE },
+  releaseExtensionRange: { ...EMPTY_RANGE },
+  armAngleRange: { ...EMPTY_RANGE },
+  plateXRange: { ...EMPTY_RANGE },
+  plateZRange: { ...EMPTY_RANGE },
+  launchSpeedRange: { ...EMPTY_RANGE },
+  launchAngleRange: { ...EMPTY_RANGE },
+  daysRestRange: { ...EMPTY_RANGE },
+  inningHalf: '',
+  handednessMatchup: '',
+  opponentTeam: '',
+  timesThroughOrder: null,
+  barrelsOnly: false,
+
+  minPitchesGame: null,
 }

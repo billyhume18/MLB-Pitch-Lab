@@ -37,6 +37,14 @@ export async function getCareerStats(mlbamId: number) {
   return Array.isArray(data) ? data[0] ?? {} : data
 }
 
+export async function getSaberStats(mlbamId: number, season: number) {
+  const res = await fetch(`${API_BASE}/api/stats/saber?mlbam_id=${mlbamId}&season=${season}`)
+  if (!res.ok) throw new Error(`Sabermetric stats failed: ${res.status}`)
+  const text = await res.text()
+  const data = JSON.parse(text)
+  return Array.isArray(data) ? data[0] ?? {} : data
+}
+
 export async function getGameLog(mlbamId: number, season: number): Promise<Record<string, unknown>[]> {
   const res = await fetch(`${API_BASE}/api/stats/gamelog?mlbam_id=${mlbamId}&season=${season}`)
   if (!res.ok) throw new Error(`Game log failed: ${res.status}`)
@@ -62,7 +70,7 @@ export function getExportUrl(mlbamId: number, startDate: string, endDate: string
   return `${API_BASE}/api/pitches/export?mlbam_id=${mlbamId}&start_date=${startDate}&end_date=${endDate}`
 }
 
-export function downloadFilteredCSV(pitches: StatcastPitch[], filename: string) {
+export function downloadFilteredCSV(pitches: Record<string, unknown>[], filename: string) {
   if (pitches.length === 0) return
   const keys = Object.keys(pitches[0])
   const header = keys.join(',')

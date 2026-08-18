@@ -6,6 +6,7 @@ source("api/cache_helpers.R")
 source("api/player.R")
 source("api/pitches.R")
 source("api/stats.R")
+source("api/export.R")
 
 # Helper: write a JSON string directly into the response body (avoids plumber
 # re-serializing a character as a JSON string-within-a-string).
@@ -77,6 +78,19 @@ function(req, res, mlbam_id) {
   cached <- cache_get(key, ttl_seconds = 86400)
   if (!is.null(cached)) return(json_response(res, cached))
   stats  <- get_career_stats(id)
+  result <- jsonlite::toJSON(stats, na = "null", auto_unbox = TRUE)
+  cache_set(key, result)
+  json_response(res, result)
+}
+
+#* @get /api/stats/saber
+function(req, res, mlbam_id, season) {
+  id  <- as.integer(mlbam_id)
+  yr  <- as.integer(season)
+  key <- paste0("stats_saber_", id, "_", yr)
+  cached <- cache_get(key, ttl_seconds = 3600)
+  if (!is.null(cached)) return(json_response(res, cached))
+  stats  <- get_saber_stats(id, yr)
   result <- jsonlite::toJSON(stats, na = "null", auto_unbox = TRUE)
   cache_set(key, result)
   json_response(res, result)
@@ -171,4 +185,12 @@ function(req, res, mlbam_id, start_date, end_date) {
   res$setHeader("Content-Disposition", paste0('attachment; filename="', fname, '"'))
   res$body <- readr::format_csv(as.data.frame(data))
   res
+}
+
+# ── Export (arbitrary filtered/grouped view from the frontend) ────────────────
+
+#* @parser json
+#* @post /api/export/<format>
+function(req, res, format) {
+  handle_export(req, res, format)
 }

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import {
   ResponsiveContainer, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -8,34 +8,32 @@ import {
 import PlayerSearch from '@/components/controls/PlayerSearch'
 import DateRangePicker from '@/components/controls/DateRangePicker'
 import Spinner from '@/components/ui/Spinner'
+import ExportMenu from '@/components/table/ExportMenu'
 import { fetchPitches } from '@/lib/api'
 import { pitchColor, PITCHER_COLORS, pitchName } from '@/lib/colors'
 import { avg, calcWhiffPct } from '@/lib/filters'
+import { useTimeFrame } from '@/lib/timeframe'
 import type { StatcastPitch, PlayerSearchResult } from '@/lib/types'
-
-const today = new Date().toISOString().slice(0, 10)
-const defaultStart = `${new Date().getFullYear()}-03-01`
 
 interface Slot {
   player: PlayerSearchResult | null
-  startDate: string
-  endDate: string
   pitches: StatcastPitch[]
   loading: boolean
   error: string | null
 }
 
 const emptySlot = (): Slot => ({
-  player: null, startDate: defaultStart, endDate: today,
-  pitches: [], loading: false, error: null,
+  player: null, pitches: [], loading: false, error: null,
 })
 
 type OverlayMode = 'pitcher' | 'type'
 
 export default function ComparePage() {
+  const { startDate, endDate } = useTimeFrame()
   const [slots, setSlots] = useState<Slot[]>([emptySlot(), emptySlot()])
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('pitcher')
   const [activeView, setActiveView] = useState<'movement' | 'velo' | 'arsenal'>('movement')
+  const chartAreaRef = useRef<HTMLDivElement>(null)
 
   const setSlot = (i: number, patch: Partial<Slot>) =>
     setSlots(s => s.map((slot, idx) => idx === i ? { ...slot, ...patch } : slot))
@@ -48,7 +46,7 @@ export default function ComparePage() {
     if (!slot.player) return
     setSlot(i, { loading: true, error: null, pitches: [] })
     try {
-      const data = await fetchPitches(slot.player.key_mlbam, slot.startDate, slot.endDate)
+      const data = await fetchPitches(slot.player.key_mlbam, startDate, endDate)
       setSlot(i, { pitches: data.pitches ?? [], loading: false })
     } catch (e) {
       setSlot(i, { loading: false, error: e instanceof Error ? e.message : 'Load failed' })
@@ -56,6 +54,10 @@ export default function ComparePage() {
   }
 
   const loadedSlots = slots.filter(s => s.pitches.length > 0)
+
+  const combinedRows = useMemo(() => loadedSlots.flatMap(slot =>
+    slot.pitches.map(p => ({ pitcher_label: `${slot.player!.name_first} ${slot.player!.name_last}`, ...p }))
+  ), [loadedSlots])
 
   const movementData = useMemo(() => {
     if (overlayMode === 'pitcher') {
@@ -85,6 +87,11 @@ export default function ComparePage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {/* Global time frame */}
+      <div className="p-4 pb-0 shrink-0 max-w-xs">
+        <DateRangePicker />
+      </div>
+
       {/* Pitcher slots */}
       <div className="flex gap-3 p-4 border-b border-navy-700 overflow-x-auto shrink-0">
         {slots.map((slot, i) => (
@@ -102,13 +109,6 @@ export default function ComparePage() {
               selected={slot.player}
               onSelect={p => setSlot(i, { player: p })}
             />
-            <div className="mt-2">
-              <DateRangePicker
-                startDate={slot.startDate} endDate={slot.endDate}
-                onStartChange={d => setSlot(i, { startDate: d })}
-                onEndChange={d => setSlot(i, { endDate: d })}
-              />
-            </div>
             <button
               onClick={() => loadSlot(i)}
               disabled={!slot.player || slot.loading}
@@ -153,7 +153,7 @@ export default function ComparePage() {
               ))}
             </div>
             {activeView === 'movement' && (
-              <div className="ml-auto flex rounded overflow-hidden border border-navy-600 text-xs">
+              <div className="flex rounded overflow-hidden border border-navy-600 text-xs">
                 {([['pitcher', 'By Pitcher'], ['type', 'By Pitch Type']] as const).map(([v, l]) => (
                   <button key={v} onClick={() => setOverlayMode(v)}
                     className={`px-2 py-1 ${overlayMode === v ? 'bg-blue-600 text-white' : 'bg-navy-800 text-slate-400 hover:text-white'}`}>
@@ -162,9 +162,17 @@ export default function ComparePage() {
                 ))}
               </div>
             )}
+            <ExportMenu
+              rows={combinedRows}
+              filenameBase={`statcast_compare_${startDate}_${endDate}`}
+              className="ml-auto"
+              pdfTitle="Pitcher Comparison"
+              pdfSubtitle={`${startDate} to ${endDate}`}
+              chartContainerRef={chartAreaRef}
+            />
           </div>
 
-          <div className="flex-1 min-h-0 p-4 overflow-hidden">
+          <div ref={chartAreaRef} className="flex-1 min-h-0 p-4 overflow-hidden">
             {activeView === 'movement' && (
               <div className="h-full">
                 <h2 className="text-base font-semibold text-white mb-3">Movement Comparison (IHB × IVB)</h2>

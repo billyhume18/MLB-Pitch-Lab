@@ -1,7 +1,8 @@
 'use client'
 import { pitchColor } from '@/lib/colors'
-import { downloadFilteredCSV } from '@/lib/api'
-import type { PitchFilters, StatcastPitch } from '@/lib/types'
+import { getOpponentTeams } from '@/lib/filters'
+import ExportMenu from '@/components/table/ExportMenu'
+import type { PitchFilters, StatcastPitch, NumRange } from '@/lib/types'
 
 interface Props {
   availablePitchTypes: string[]
@@ -9,7 +10,9 @@ interface Props {
   onChange: (f: PitchFilters) => void
   onClear: () => void
   gameLog: Record<string, unknown>[]
+  pitches: StatcastPitch[]
   filteredPitches: StatcastPitch[]
+  pitcherTeam: string | null
   playerLastName: string
   startDate: string
   endDate: string
@@ -71,6 +74,63 @@ function Sel({
         <option key={v} value={v}>{label}</option>
       ))}
     </select>
+  )
+}
+
+function RangeInput({
+  value,
+  onChange,
+  step = 1,
+  placeholderMin = 'min',
+  placeholderMax = 'max',
+}: {
+  value: NumRange
+  onChange: (r: NumRange) => void
+  step?: number
+  placeholderMin?: string
+  placeholderMax?: string
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type="number"
+        step={step}
+        value={value.min ?? ''}
+        onChange={e => onChange({ ...value, min: e.target.value === '' ? null : Number(e.target.value) })}
+        placeholder={placeholderMin}
+        className="w-full bg-navy-800 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+      />
+      <span className="text-slate-600 text-xs">–</span>
+      <input
+        type="number"
+        step={step}
+        value={value.max ?? ''}
+        onChange={e => onChange({ ...value, max: e.target.value === '' ? null : Number(e.target.value) })}
+        placeholder={placeholderMax}
+        className="w-full bg-navy-800 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+      />
+    </div>
+  )
+}
+
+function NumInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: number | null
+  onChange: (v: number | null) => void
+  placeholder?: string
+}) {
+  return (
+    <input
+      type="number"
+      min={0}
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
+      placeholder={placeholder}
+      className="w-full bg-navy-800 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+    />
   )
 }
 
@@ -182,9 +242,10 @@ function getLogVal(row: Record<string, unknown>, ...keys: string[]): string {
 
 export default function FilterPanel({
   availablePitchTypes, filters, onChange, onClear,
-  gameLog, filteredPitches, playerLastName, startDate, endDate,
+  gameLog, pitches, filteredPitches, pitcherTeam, playerLastName, startDate, endDate,
 }: Props) {
   const set = (patch: Partial<PitchFilters>) => onChange({ ...filters, ...patch })
+  const opponentTeams = getOpponentTeams(pitches, pitcherTeam)
 
   const togglePitchType = (type: string) => {
     const next = new Set(filters.pitchTypes)
@@ -403,19 +464,127 @@ export default function FilterPanel({
         </Sect>
       )}
 
+      <div className="pt-2 border-t border-navy-700 space-y-3">
+        <div className="text-[10px] text-slate-500 uppercase tracking-wider">Statcast Range Filters</div>
+
+        <Sect label="Velocity (mph)">
+          <RangeInput value={filters.veloRange} onChange={v => set({ veloRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Spin Rate (rpm)">
+          <RangeInput value={filters.spinRange} onChange={v => set({ spinRange: v })} step={10} />
+        </Sect>
+        <Sect label="Horizontal Break — IHB (in)">
+          <RangeInput value={filters.ihbRange} onChange={v => set({ ihbRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Vertical Break — IVB (in)">
+          <RangeInput value={filters.ivbRange} onChange={v => set({ ivbRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Release Pos X (ft)">
+          <RangeInput value={filters.releasePosXRange} onChange={v => set({ releasePosXRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Release Pos Z (ft)">
+          <RangeInput value={filters.releasePosZRange} onChange={v => set({ releasePosZRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Extension (ft)">
+          <RangeInput value={filters.releaseExtensionRange} onChange={v => set({ releaseExtensionRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Arm Angle (°)">
+          <RangeInput value={filters.armAngleRange} onChange={v => set({ armAngleRange: v })} step={1} />
+        </Sect>
+        <Sect label="Plate X (ft)">
+          <RangeInput value={filters.plateXRange} onChange={v => set({ plateXRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Plate Z (ft)">
+          <RangeInput value={filters.plateZRange} onChange={v => set({ plateZRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Exit Velocity (mph)">
+          <RangeInput value={filters.launchSpeedRange} onChange={v => set({ launchSpeedRange: v })} step={0.1} />
+        </Sect>
+        <Sect label="Launch Angle (°)">
+          <RangeInput value={filters.launchAngleRange} onChange={v => set({ launchAngleRange: v })} step={1} />
+        </Sect>
+        <Sect label="Days Rest Before Outing">
+          <RangeInput value={filters.daysRestRange} onChange={v => set({ daysRestRange: v })} step={1} />
+        </Sect>
+
+        <Sect label="Barrels Only">
+          <button
+            onClick={() => set({ barrelsOnly: !filters.barrelsOnly })}
+            className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
+              filters.barrelsOnly ? 'bg-blue-600 text-white' : 'bg-navy-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            {filters.barrelsOnly ? 'On' : 'Off'}
+          </button>
+        </Sect>
+
+        <Sect label="Inning Half">
+          <BtnSet
+            value={filters.inningHalf}
+            onChange={v => set({ inningHalf: (v ?? '') as 'top' | 'bottom' | '' })}
+            options={[
+              { v: '',        label: 'All' },
+              { v: 'top',     label: 'Top' },
+              { v: 'bottom',  label: 'Bottom' },
+            ]}
+          />
+        </Sect>
+
+        <Sect label="Handedness Matchup">
+          <BtnSet
+            value={filters.handednessMatchup}
+            onChange={v => set({ handednessMatchup: (v ?? '') as 'same' | 'opposite' | '' })}
+            options={[
+              { v: '',          label: 'All' },
+              { v: 'same',      label: 'Same-side' },
+              { v: 'opposite',  label: 'Opposite' },
+            ]}
+          />
+        </Sect>
+
+        {opponentTeams.length > 0 && (
+          <Sect label="Opponent Team">
+            <Sel
+              value={filters.opponentTeam}
+              onChange={v => set({ opponentTeam: v })}
+              options={[{ v: '', label: 'All' }, ...opponentTeams.map(t => ({ v: t, label: t }))]}
+            />
+          </Sect>
+        )}
+
+        <Sect label="Times Through Order">
+          <BtnSet
+            value={filters.timesThroughOrder}
+            onChange={v => set({ timesThroughOrder: v === null ? null : Number(v) })}
+            options={[
+              { v: null, label: 'All' },
+              { v: 1,    label: '1st' },
+              { v: 2,    label: '2nd' },
+              { v: 3,    label: '3rd' },
+              { v: 4,    label: '4th+' },
+            ]}
+          />
+        </Sect>
+
+        <Sect label="Min Pitches / Game (this outing)">
+          <NumInput
+            value={filters.minPitchesGame}
+            onChange={v => set({ minPitchesGame: v })}
+            placeholder="e.g. 15"
+          />
+        </Sect>
+      </div>
+
       <div className="pt-1 space-y-1.5">
         {filteredPitches.length > 0 && (
-          <button
-            onClick={() =>
-              downloadFilteredCSV(
-                filteredPitches,
-                `statcast_${playerLastName || 'pitcher'}_${startDate}_${endDate}.csv`
-              )
-            }
-            className="w-full py-1.5 rounded border border-slate-600 text-xs text-slate-300 hover:bg-navy-800 hover:text-white transition-colors"
-          >
-            Export CSV ({filteredPitches.length.toLocaleString()} pitches)
-          </button>
+          <ExportMenu
+            rows={filteredPitches}
+            filenameBase={`statcast_${playerLastName || 'pitcher'}_${startDate}_${endDate}`}
+            label="Export"
+            className="w-full"
+            pdfTitle={`${playerLastName || 'Pitcher'} — Statcast Pitch Log`}
+            pdfSubtitle={`${startDate} to ${endDate}`}
+          />
         )}
         <button
           onClick={onClear}

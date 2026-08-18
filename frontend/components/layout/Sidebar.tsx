@@ -3,6 +3,7 @@ import PlayerSearch from '@/components/controls/PlayerSearch'
 import DateRangePicker from '@/components/controls/DateRangePicker'
 import FilterPanel from '@/components/controls/FilterPanel'
 import Spinner from '@/components/ui/Spinner'
+import { useTimeFrame } from '@/lib/timeframe'
 import type { PitchFilters, PlayerSearchResult, StatcastPitch } from '@/lib/types'
 import { DEFAULT_FILTERS } from '@/lib/types'
 import { getActivePitchTypes } from '@/lib/filters'
@@ -10,14 +11,11 @@ import { getActivePitchTypes } from '@/lib/filters'
 interface Props {
   selected: PlayerSearchResult | null
   onPlayerSelect: (p: PlayerSearchResult) => void
-  startDate: string
-  endDate: string
-  onStartDateChange: (d: string) => void
-  onEndDateChange: (d: string) => void
   onLoad: () => void
   loading: boolean
   pitches: StatcastPitch[]
   filteredPitches: StatcastPitch[]
+  pitcherTeam: string | null
   filters: PitchFilters
   onFiltersChange: (f: PitchFilters) => void
   gameLog: Record<string, unknown>[]
@@ -25,12 +23,12 @@ interface Props {
 
 export default function Sidebar({
   selected, onPlayerSelect,
-  startDate, endDate, onStartDateChange, onEndDateChange,
   onLoad, loading,
-  pitches, filteredPitches,
+  pitches, filteredPitches, pitcherTeam,
   filters, onFiltersChange,
   gameLog,
 }: Props) {
+  const { startDate, endDate } = useTimeFrame()
   const availableTypes = getActivePitchTypes(pitches)
 
   return (
@@ -42,10 +40,7 @@ export default function Sidebar({
         </section>
 
         <section>
-          <DateRangePicker
-            startDate={startDate} endDate={endDate}
-            onStartChange={onStartDateChange} onEndChange={onEndDateChange}
-          />
+          <DateRangePicker />
         </section>
 
         <button
@@ -64,7 +59,9 @@ export default function Sidebar({
               onChange={onFiltersChange}
               onClear={() => onFiltersChange({ ...DEFAULT_FILTERS })}
               gameLog={gameLog}
+              pitches={pitches}
               filteredPitches={filteredPitches}
+              pitcherTeam={pitcherTeam}
               playerLastName={selected?.name_last ?? ''}
               startDate={startDate}
               endDate={endDate}
