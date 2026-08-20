@@ -27,7 +27,7 @@ fetch_statcast_chunked <- function(pitcher_id, start_date, end_date) {
 
   message(paste0("Fetching ", length(chunks), " month chunk(s) for pitcher ", pitcher_id))
 
-  results <- purrr::map_dfr(chunks, function(chunk) {
+  chunk_results <- purrr::map(chunks, function(chunk) {
     message(paste0("  Chunk: ", chunk$s, " to ", chunk$e))
     Sys.sleep(0.5)
     tryCatch({
@@ -42,7 +42,14 @@ fetch_statcast_chunked <- function(pitcher_id, start_date, end_date) {
     })
   })
 
-  results
+  # Drop empty chunks before binding — an empty chunk's columns default to
+  # `logical` (no data to infer type from), which conflicts with the real
+  # `character`/`numeric` columns in non-empty chunks and breaks bind_rows.
+  non_empty <- Filter(function(x) !is.null(x) && nrow(x) > 0, chunk_results)
+
+  if (length(non_empty) == 0) return(tibble::tibble())
+
+  dplyr::bind_rows(non_empty)
 }
 
 compute_tunnel_point <- function(data) {
