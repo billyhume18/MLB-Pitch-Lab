@@ -38,3 +38,19 @@ body {
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1) opacity(0.4);
 }
+
+/* Tailwind's preflight forces svg { display: block } globally, which breaks
+   Plotly.js's modebar — its icon toolbar (used by the 3D tunneling plot)
+   depends on the default inline SVG layout to lay its buttons out
+   horizontally instead of stacking them. */
+.js-plotly-plot .modebar {
+  display: flex !important;
+}
+.js-plotly-plot .modebar-group {
+  display: flex !important;
+  align-items: center;
+}
+.js-plotly-plot .modebar-btn svg {
+  display: inline-block !important;
+  vertical-align: middle;
+}

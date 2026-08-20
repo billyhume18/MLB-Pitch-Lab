@@ -239,6 +239,7 @@ export default function LabPage() {
                   career={careerStats}
                   priorSeason={priorSeasonStats}
                   priorSeasonLabel={`${Number(startDate.slice(0, 4)) - 1} Season`}
+                  pitches={pitches}
                 />
               )}
               {activeTab === 'log'        && (
@@ -290,27 +291,43 @@ function HandednessSplits({ pitches }: { pitches: StatcastPitch[] }) {
         {sides.map(side => {
           const group = pitches.filter(p => p.stand === side)
           if (group.length === 0) return null
-          const w    = calcWhiffPct(group)
-          const velo = avg(group.map(p => p.release_speed))
+          // Whiff% is a rate stat over the whole mix and stays meaningful
+          // aggregated; velocity is only meaningful per pitch type (a mixed
+          // "velo vs LHB" average blends a 98mph fastball with an 82mph
+          // curveball into a number nobody can use).
+          const w = calcWhiffPct(group)
           return (
             <div key={side} className="bg-navy-800 rounded-lg p-3 border border-navy-700">
-              <div className="text-sm font-semibold text-white mb-2">vs {side}HB ({group.length})</div>
-              <div className="flex gap-4 text-xs">
-                <span className="text-slate-400">Velo <span className="text-white font-mono">{velo?.toFixed(1) ?? '—'}</span></span>
-                <span className="text-slate-400">Whiff% <span className="text-white font-mono">{w !== null ? (w * 100).toFixed(1) + '%' : '—'}</span></span>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold text-white">vs {side}HB ({group.length})</div>
+                <span className="text-xs text-slate-400">Whiff% <span className="text-white font-mono">{w !== null ? (w * 100).toFixed(1) + '%' : '—'}</span></span>
               </div>
-              <div className="flex flex-wrap gap-1 mt-2">
-                {types.map(t => {
-                  const n = group.filter(p => p.pitch_type === t).length
-                  if (n === 0) return null
-                  return (
-                    <span key={t} className="text-xs font-mono px-1.5 py-0.5 rounded"
-                      style={{ color: pitchColor(t), background: pitchColor(t) + '22' }}>
-                      {t} {(n / group.length * 100).toFixed(0)}%
-                    </span>
-                  )
-                })}
-              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 border-b border-navy-700">
+                    <th className="text-left pb-1">Type</th>
+                    <th className="text-right pb-1">Usage</th>
+                    <th className="text-right pb-1">Velo</th>
+                    <th className="text-right pb-1">Whiff%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {types.map(t => {
+                    const g = group.filter(p => p.pitch_type === t)
+                    if (g.length === 0) return null
+                    const typeVelo = avg(g.map(p => p.release_speed))
+                    const typeWhiff = calcWhiffPct(g)
+                    return (
+                      <tr key={t} className="border-b border-navy-800/60">
+                        <td className="py-1 font-mono" style={{ color: pitchColor(t) }}>{t}</td>
+                        <td className="py-1 text-right font-mono text-slate-300">{(g.length / group.length * 100).toFixed(0)}%</td>
+                        <td className="py-1 text-right font-mono text-slate-300">{typeVelo?.toFixed(1) ?? '—'}</td>
+                        <td className="py-1 text-right font-mono text-slate-300">{typeWhiff !== null ? (typeWhiff * 100).toFixed(1) + '%' : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )
         })}

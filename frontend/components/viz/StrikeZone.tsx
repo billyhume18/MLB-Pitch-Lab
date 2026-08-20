@@ -5,7 +5,20 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, Legend, Customized,
 } from 'recharts'
 import { pitchColor } from '@/lib/colors'
+import { calcWhiffPct, calcCSWPct } from '@/lib/filters'
+import ExportMenu from '@/components/table/ExportMenu'
 import type { StatcastPitch } from '@/lib/types'
+
+// Statcast zone codes: 1-9 = in-zone 3x3 grid (1-3 top row, 4-6 mid, 7-9
+// bottom, each row left-to-right from the pitcher's view), 11-14 = the four
+// out-of-zone quadrants (11 up-left … 14 down-right).
+const ZONE_LABELS: Record<number, string> = {
+  1: 'Up-In', 2: 'Up-Mid', 3: 'Up-Away',
+  4: 'Mid-In', 5: 'Heart', 6: 'Mid-Away',
+  7: 'Down-In', 8: 'Down-Mid', 9: 'Down-Away',
+  11: 'Chase Up-In', 12: 'Chase Up-Away', 13: 'Chase Down-In', 14: 'Chase Down-Away',
+}
+const ZONE_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14]
 
 type Filter = 'all' | 'called_strike' | 'swinging_strike' | 'hit_into_play' | 'ball'
 type ViewMode = 'scatter' | 'heatmap'
@@ -135,6 +148,21 @@ export default function StrikeZone({ pitches }: Props) {
     })
   }, [shown, viewMode, heatmapType])
 
+  const zoneSummary = useMemo(() => {
+    const total = shown.length
+    return ZONE_ORDER.map(z => {
+      const rows = shown.filter(p => p.zone === z)
+      return {
+        zone: z,
+        label: ZONE_LABELS[z],
+        count: rows.length,
+        pct: total > 0 ? rows.length / total : null,
+        whiffPct: calcWhiffPct(rows),
+        cswPct: calcCSWPct(rows),
+      }
+    }).filter(r => r.count > 0)
+  }, [shown])
+
   if (pitches.length === 0) {
     return <div className="flex items-center justify-center h-full text-slate-500 text-sm">Load data to see Strike Zone</div>
   }
@@ -178,19 +206,23 @@ export default function StrikeZone({ pitches }: Props) {
               </button>
             ))}
           </div>
+          <ExportMenu rows={zoneSummary} filenameBase="strike_zone_summary" label="Export" />
         </div>
       </div>
-      <div className="flex-1 min-h-0">
+      {/* Plate is 4ft (x) by 5ft (y) of real space — lock the container to that
+          aspect ratio so 1ft renders as the same pixel distance on both axes. */}
+      <div className="flex-1 min-h-0 flex items-center justify-center">
+        <div style={{ aspectRatio: '4 / 5', height: '100%', maxWidth: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 20 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="#1e3a5f" />
             <XAxis
-              type="number" dataKey="x" domain={[-2, 2]} tickCount={9}
+              type="number" dataKey="x" domain={[-2, 2]} tickCount={9} allowDataOverflow
               tick={{ fill: '#94a3b8', fontSize: 11 }}
               label={{ value: 'Plate X (ft)', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 11 }}
             />
             <YAxis
-              type="number" dataKey="y" domain={[0, 5]} tickCount={6}
+              type="number" dataKey="y" domain={[0, 5]} tickCount={6} allowDataOverflow
               tick={{ fill: '#94a3b8', fontSize: 11 }}
               label={{ value: 'Height (ft)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 11 }}
             />
@@ -199,12 +231,12 @@ export default function StrikeZone({ pitches }: Props) {
               <Customized component={(props: any) => <HeatmapOverlay {...props} cells={heatCells} />} />
             )}
             {/* Strike zone rectangle */}
-            <ReferenceArea x1={szL} x2={szR} y1={szBot} y2={szTop} fill="none" stroke="#ffffff" strokeWidth={1.5} />
+            <ReferenceArea x1={szL} x2={szR} y1={szBot} y2={szTop} fill="#ffffff" fillOpacity={0.04} stroke="#f8fafc" strokeWidth={2.5} />
             {/* Inner 3x3 grid (full-span lines within chart area) */}
-            <ReferenceLine x={szL + zoneW} stroke="#475569" strokeWidth={0.5} />
-            <ReferenceLine x={szL + 2 * zoneW} stroke="#475569" strokeWidth={0.5} />
-            <ReferenceLine y={szBot + zoneH} stroke="#475569" strokeWidth={0.5} />
-            <ReferenceLine y={szBot + 2 * zoneH} stroke="#475569" strokeWidth={0.5} />
+            <ReferenceLine x={szL + zoneW} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <ReferenceLine x={szL + 2 * zoneW} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <ReferenceLine y={szBot + zoneH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <ReferenceLine y={szBot + 2 * zoneH} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
             <ReferenceLine x={0} stroke="#334155" />
             <Tooltip content={<CustomTooltip />} />
             {viewMode === 'scatter' && Object.entries(groups).map(([type, pts]) => (
@@ -221,6 +253,32 @@ export default function StrikeZone({ pitches }: Props) {
             )}
           </ScatterChart>
         </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="mt-3 shrink-0 overflow-auto" style={{ maxHeight: '9rem' }}>
+        <table className="w-full text-xs border-collapse">
+          <thead className="sticky top-0 bg-navy-900">
+            <tr className="border-b border-navy-700 text-slate-500">
+              <th className="text-left pb-1.5 px-2">Zone</th>
+              <th className="text-right pb-1.5 px-2">N</th>
+              <th className="text-right pb-1.5 px-2">%</th>
+              <th className="text-right pb-1.5 px-2">Whiff%</th>
+              <th className="text-right pb-1.5 px-2">CSW%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {zoneSummary.map(z => (
+              <tr key={z.zone} className="border-b border-navy-800">
+                <td className="py-1 px-2 text-slate-300">{z.label} <span className="text-slate-600">({z.zone})</span></td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{z.count}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{z.pct !== null ? (z.pct * 100).toFixed(1) + '%' : '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{z.whiffPct !== null ? (z.whiffPct * 100).toFixed(1) + '%' : '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{z.cswPct !== null ? (z.cswPct * 100).toFixed(1) + '%' : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import { calcWorkload } from '@/lib/workload'
+import ExportMenu from '@/components/table/ExportMenu'
 import type { StatcastPitch } from '@/lib/types'
 
 interface Props { pitches: StatcastPitch[] }
@@ -63,7 +64,7 @@ export default function WorkloadChart({ pitches }: Props) {
         </ResponsiveContainer>
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="shrink-0">
         <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Rest Days Between Outings</div>
         <div className="h-40">
           <ResponsiveContainer width="100%" height="100%">
@@ -82,6 +83,18 @@ export default function WorkloadChart({ pitches }: Props) {
         </div>
       </div>
 
+      <div className="shrink-0 flex items-center justify-between">
+        <div className="text-xs text-slate-500 uppercase tracking-wider">Outing-by-Outing Detail</div>
+        <ExportMenu
+          rows={workload.map(w => ({
+            game_date: w.game_date, game_pk: w.game_pk, pitch_count: w.pitchCount,
+            rest_days: w.restDays, rolling_avg_prev_3: w.rollingAvgPrev3,
+            cumulative_season_pitches: w.cumulativeSeasonPitches, spike_flag: w.spike,
+          }))}
+          filenameBase="workload_by_outing"
+          label="Export"
+        />
+      </div>
       <div className="shrink-0 overflow-x-auto">
         <table className="text-xs w-full border-collapse">
           <thead>

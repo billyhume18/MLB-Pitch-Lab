@@ -7,6 +7,8 @@ import {
 } from 'recharts'
 import { pitchColor } from '@/lib/colors'
 import { stdDev } from '@/lib/metrics'
+import { avg } from '@/lib/filters'
+import ExportMenu from '@/components/table/ExportMenu'
 import type { StatcastPitch } from '@/lib/types'
 
 // Release-point standard deviation per outing, across all pitch types
@@ -117,6 +119,22 @@ export default function ReleasePoint({ pitches }: Props) {
       .filter((e): e is NonNullable<typeof e> => e !== null)
   }, [groups, mode, showEllipses])
 
+  const summary = useMemo(() => {
+    const types = [...new Set(pitches.map(p => p.pitch_type).filter(Boolean))].sort()
+    return types.map(type => {
+      const g = pitches.filter(p => p.pitch_type === type && p.release_pos_x !== null && p.release_pos_z !== null)
+      return {
+        pitch_type: type,
+        count: g.length,
+        avg_release_x: avg(g.map(p => p.release_pos_x)),
+        release_x_sd: stdDev(g.map(p => p.release_pos_x)),
+        avg_release_z: avg(g.map(p => p.release_pos_z)),
+        release_z_sd: stdDev(g.map(p => p.release_pos_z)),
+        avg_extension: avg(g.map(p => p.release_extension)),
+      }
+    }).sort((a, b) => b.count - a.count)
+  }, [pitches])
+
   if (pitches.length === 0) {
     return <div className="flex items-center justify-center h-full text-slate-500 text-sm">Load data to see Release Point</div>
   }
@@ -126,6 +144,7 @@ export default function ReleasePoint({ pitches }: Props) {
       <div className="flex items-center justify-between mb-3 shrink-0">
         <h2 className="text-base font-semibold text-white">Release Point Consistency</h2>
         <div className="flex gap-2 items-center">
+          <ExportMenu rows={summary} filenameBase="release_point_by_pitch_type" label="Export" />
           {mode === 'type' && (
             <button
               onClick={() => setShowEllipses(v => !v)}
@@ -192,6 +211,35 @@ export default function ReleasePoint({ pitches }: Props) {
           <span>Late innings</span>
         </div>
       )}
+
+      <div className="mt-3 shrink-0 overflow-auto" style={{ maxHeight: '8rem' }}>
+        <table className="w-full text-xs border-collapse">
+          <thead className="sticky top-0 bg-navy-900">
+            <tr className="border-b border-navy-700 text-slate-500">
+              <th className="text-left pb-1.5 px-2">Type</th>
+              <th className="text-right pb-1.5 px-2">N</th>
+              <th className="text-right pb-1.5 px-2">Avg Rel X</th>
+              <th className="text-right pb-1.5 px-2">Rel X SD</th>
+              <th className="text-right pb-1.5 px-2">Avg Rel Z</th>
+              <th className="text-right pb-1.5 px-2">Rel Z SD</th>
+              <th className="text-right pb-1.5 px-2">Avg Ext</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.map(s => (
+              <tr key={s.pitch_type} className="border-b border-navy-800">
+                <td className="py-1 px-2" style={{ color: pitchColor(s.pitch_type) }}>{s.pitch_type}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.count}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.avg_release_x?.toFixed(3) ?? '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.release_x_sd?.toFixed(3) ?? '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.avg_release_z?.toFixed(3) ?? '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.release_z_sd?.toFixed(3) ?? '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.avg_extension?.toFixed(2) ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {trend.length >= 2 && (
         <div className="mt-3 h-32 shrink-0">

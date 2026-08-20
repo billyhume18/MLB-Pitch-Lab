@@ -51,8 +51,15 @@ get_game_log     <- function(player_id, season) fetch_people_stats(player_id, "g
 get_saber_stats <- function(player_id, season) fetch_people_stats(player_id, "sabermetrics", season = season)
 
 get_player_bio <- function(player_id) {
-  tryCatch(
-    baseballr::mlb_people(person_ids = player_id),
-    error = function(e) { message(e$message); tibble::tibble() }
-  )
+  tryCatch({
+    req <- httr2::request(paste0(MLB_STATS_BASE, "/people/", player_id)) |>
+      httr2::req_url_query(hydrate = "currentTeam") |>
+      httr2::req_user_agent("pitch-lab-research-tool/1.0")
+    resp   <- httr2::req_perform(req)
+    body   <- httr2::resp_body_string(resp)
+    parsed <- jsonlite::fromJSON(body, flatten = TRUE)
+    people <- parsed$people
+    if (is.null(people) || length(people) == 0 || nrow(people) == 0) return(tibble::tibble())
+    janitor::clean_names(tibble::as_tibble(people))
+  }, error = function(e) { message(e$message); tibble::tibble() })
 }

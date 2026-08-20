@@ -5,7 +5,9 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, Legend,
 } from 'recharts'
 import { pitchColor, pitchName } from '@/lib/colors'
-import { describeFilters } from '@/lib/filters'
+import { describeFilters, avg } from '@/lib/filters'
+import { stdDev } from '@/lib/metrics'
+import ExportMenu from '@/components/table/ExportMenu'
 import type { StatcastPitch, PitchFilters } from '@/lib/types'
 
 interface Props { pitches: StatcastPitch[]; filters?: PitchFilters }
@@ -49,6 +51,22 @@ export default function MovementPlot({ pitches, filters }: Props) {
   const total = pitches.filter(p => p.ihb !== null).length
   const typeCounts = Object.fromEntries(Object.entries(groups).map(([t, pts]) => [t, pts.length]))
 
+  const summary = useMemo(() => {
+    const types = [...new Set(pitches.map(p => p.pitch_type).filter(Boolean))].sort()
+    return types.map(type => {
+      const g = pitches.filter(p => p.pitch_type === type)
+      return {
+        pitch_type: type,
+        count: g.length,
+        avg_ihb: avg(g.map(p => p.ihb)),
+        avg_ivb: avg(g.map(p => p.ivb)),
+        ihb_sd: stdDev(g.map(p => p.ihb)),
+        ivb_sd: stdDev(g.map(p => p.ivb)),
+        avg_velo: avg(g.map(p => p.release_speed)),
+      }
+    }).sort((a, b) => b.count - a.count)
+  }, [pitches])
+
   if (pitches.length === 0) {
     return <EmptyState label="Movement Plot" />
   }
@@ -60,14 +78,17 @@ export default function MovementPlot({ pitches, filters }: Props) {
         subtitle={filters ? describeFilters(pitches, filters) : undefined}
         count={total}
       >
-        <Toggle
-          options={[{ value: 'pitcher', label: 'Pitcher POV' }, { value: 'catcher', label: 'Catcher POV' }]}
-          value={pov}
-          onChange={v => setPov(v as 'pitcher' | 'catcher')}
-        />
+        <div className="flex items-center gap-2">
+          <Toggle
+            options={[{ value: 'pitcher', label: 'Pitcher POV' }, { value: 'catcher', label: 'Catcher POV' }]}
+            value={pov}
+            onChange={v => setPov(v as 'pitcher' | 'catcher')}
+          />
+          <ExportMenu rows={summary} filenameBase="movement_by_pitch_type" label="Export" />
+        </div>
       </PanelHeader>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-[2] min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 20 }}>
             <CartesianGrid strokeDasharray="2 4" stroke="#1e3a5f" />
@@ -100,6 +121,35 @@ export default function MovementPlot({ pitches, filters }: Props) {
             />
           </ScatterChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="mt-3 shrink-0 overflow-auto" style={{ maxHeight: '9rem' }}>
+        <table className="w-full text-xs border-collapse">
+          <thead className="sticky top-0 bg-navy-900">
+            <tr className="border-b border-navy-700 text-slate-500">
+              <th className="text-left pb-1.5 px-2">Type</th>
+              <th className="text-right pb-1.5 px-2">N</th>
+              <th className="text-right pb-1.5 px-2">Avg IHB</th>
+              <th className="text-right pb-1.5 px-2">IHB SD</th>
+              <th className="text-right pb-1.5 px-2">Avg IVB</th>
+              <th className="text-right pb-1.5 px-2">IVB SD</th>
+              <th className="text-right pb-1.5 px-2">Avg Velo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.map(s => (
+              <tr key={s.pitch_type} className="border-b border-navy-800">
+                <td className="py-1 px-2" style={{ color: pitchColor(s.pitch_type) }}>{s.pitch_type}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.count}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.avg_ihb?.toFixed(1) ?? '—'}"</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.ihb_sd?.toFixed(2) ?? '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.avg_ivb?.toFixed(1) ?? '—'}"</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.ivb_sd?.toFixed(2) ?? '—'}</td>
+                <td className="py-1 px-2 text-right font-mono text-slate-300">{s.avg_velo?.toFixed(1) ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
